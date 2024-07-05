@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const List = std.ArrayList(Token);
-const Map = std.StringArrayHashMapUnmanaged(Token);
+pub const List = std.ArrayList(Token);
+pub const Map = std.StringArrayHashMapUnmanaged(Token);
 const Bencoder = @This();
 
 // final struct given to user
