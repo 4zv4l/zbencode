@@ -4,13 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
-        .name = "bencode",
+    _ = b.addModule("bencode", .{
         .root_source_file = b.path("src/bencode.zig"),
         .target = target,
         .optimize = optimize,
     });
-    b.installArtifact(lib);
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
