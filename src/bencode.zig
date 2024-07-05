@@ -16,6 +16,12 @@ const Bencode = struct {
     pub fn deinit(self: *Bencode) void {
         self.arena.deinit();
     }
+
+    pub fn format(self: Bencode, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt; // autofix
+        _ = options; // autofix
+        try writer.print("{}", .{self.root});
+    }
 };
 
 // used to parse token
