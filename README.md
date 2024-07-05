@@ -28,18 +28,28 @@ pub fn main() !void {
     defer bdata.deinit();
     allocator.free(data);
 
-    // gather + show info from torrent file
+    // show info from torrent file
     const root = bdata.root.dictionnary;
     const infos = root.get("info").?.dictionnary;
     const infohash: [20]u8 = try bitorrent.infohash(allocator, bdata.root);
 
-    print("name    : {s}\n", .{infos.get("name").?.string});
-    print("length  : {d}\n", .{sizeFmt(@intCast(infos.get("length").?.integer))});
-    print("tracker : {s}\n", .{root.get("announce").?.string});
-    print("creator : {s}\n", .{root.get("created by").?.string});
-    print("created : {d}\n", .{root.get("creation date").?.integer});
-    print("infohash: {s}\n", .{hexFmt(&infohash)});
+    print("name    : {}\n", .{infos.get("name").?});
+    print("length  : {}\n", .{sizeFmt(@intCast(infos.get("length").?.integer))});
+    print("tracker : {}\n", .{root.get("announce").?});
+    print("creator : {}\n", .{root.get("created by").?});
+    print("created : {}\n", .{root.get("creation date").?});
+    print("infohash: {}\n", .{hexFmt(&infohash)});
 }
+```
+
+```
+$ btest debian-12.6.0-amd64-netinst.iso.torrent
+name    : debian-12.6.0-amd64-netinst.iso
+length  : 631MiB
+tracker : http://bttracker.debian.org:6969/announce
+creator : mktorrent 1.1
+created : 1719662085
+infohash: f97f10cef326afcbf27bc735e98557e84d33b9fe
 ```
 
 > I am currently working on the bitorrent library
