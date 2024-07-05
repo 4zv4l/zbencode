@@ -42,7 +42,7 @@ pub const Token = union(enum) {
                 try writer.print("{d}", .{i});
             },
             .string => |s| {
-                try writer.print("\"{s}\"", .{s});
+                try writer.print("{s}", .{s});
             },
             .list => |l| {
                 var sep: []const u8 = " ";
