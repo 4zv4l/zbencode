@@ -5,7 +5,7 @@ const Map = std.StringArrayHashMapUnmanaged(Token);
 const Bencoder = @This();
 
 // final struct given to user
-const Bencode = struct {
+pub const Bencode = struct {
     arena: std.heap.ArenaAllocator,
     root: Token,
 
@@ -27,7 +27,7 @@ const Bencode = struct {
 // used to parse token
 const Reader = struct { stream: std.io.FixedBufferStream([]const u8), ally: Allocator };
 
-const Token = union(enum) {
+pub const Token = union(enum) {
     integer: i64,
     string: []const u8,
     list: List,
@@ -140,7 +140,7 @@ fn parseDictionnary(r: *Reader) !Token {
     return Token{ .dictionnary = map };
 }
 
-pub fn parseAny(r: *Reader) anyerror!Token {
+fn parseAny(r: *Reader) anyerror!Token {
     const c = try r.stream.reader().readByte();
     try r.stream.seekTo(r.stream.pos - 1);
 
