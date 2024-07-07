@@ -6,7 +6,6 @@ zig bencode library
 ```zig
 const std = @import("std");
 const bencode = @import("bencode");
-const bitorrent = @import("bitorrent/bitorrent.zig");
 const fs = std.fs;
 const print = std.debug.print;
 const sizeFmt = std.fmt.fmtIntSizeBin;
@@ -31,14 +30,12 @@ pub fn main() !void {
     // show info from torrent file
     const root = bdata.root.dictionnary;
     const infos = root.get("info").?.dictionnary;
-    const infohash: [20]u8 = try bitorrent.infohash(allocator, bdata.root);
 
     print("name    : {}\n", .{infos.get("name").?});
     print("length  : {}\n", .{sizeFmt(@intCast(infos.get("length").?.integer))});
     print("tracker : {}\n", .{root.get("announce").?});
     print("creator : {}\n", .{root.get("created by").?});
     print("created : {}\n", .{root.get("creation date").?});
-    print("infohash: {}\n", .{hexFmt(&infohash)});
 }
 ```
 
@@ -49,7 +46,6 @@ length  : 631MiB
 tracker : http://bttracker.debian.org:6969/announce
 creator : mktorrent 1.1
 created : 1719662085
-infohash: f97f10cef326afcbf27bc735e98557e84d33b9fe
 ```
 
-> I am currently working on the bitorrent library
+> I am currently working on the BitTorrent library
