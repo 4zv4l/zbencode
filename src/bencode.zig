@@ -146,7 +146,7 @@ fn parseAny(r: *Reader) anyerror!Token {
 
     return switch (c) {
         'i' => try parseInteger(r),
-        '-', '0'...'9' => try parseString(r),
+        '0'...'9' => try parseString(r),
         'l' => try parseList(r),
         'd' => try parseDictionnary(r),
         else => return error.InvalidDelimiter,
@@ -173,6 +173,8 @@ test parseInteger {
     const tk = try parseInteger(&reader);
     try testing.expect(tk == .integer);
     try testing.expectEqual(tk.integer, 34);
+    std.debug.print("\n", .{});
+    std.debug.print("{}\n", .{tk});
 }
 
 test parseString {
@@ -183,6 +185,21 @@ test parseString {
     defer testing.allocator.free(tk.string);
     try testing.expect(tk == .string);
     try testing.expectEqualStrings(tk.string, "Foo");
+    std.debug.print("\n", .{});
+    std.debug.print("{}\n", .{tk});
+}
+
+test "0 length string" {
+    const testing = std.testing;
+    const data = "0:";
+    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = testing.allocator };
+    const tk = try parseString(&reader);
+    defer testing.allocator.free(tk.string);
+    try testing.expect(tk == .string);
+    try testing.expect(tk.string.len == 0);
+    try testing.expectEqualStrings(tk.string, "");
+    std.debug.print("\n", .{});
+    std.debug.print("{}\n", .{tk});
 }
 
 test parseList {
