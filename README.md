@@ -47,5 +47,3 @@ tracker : http://bttracker.debian.org:6969/announce
 creator : mktorrent 1.1
 created : 1719662085
 ```
-
-> I am currently working on the BitTorrent library
