@@ -1,32 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-pub const List = std.ArrayList(Token);
-pub const Map = std.StringArrayHashMapUnmanaged(Token);
-const Bencoder = @This();
+const List = std.ArrayList(Token);
+const Map = std.StringArrayHashMapUnmanaged(Token);
 
-// final struct given to user
-pub const Bencode = struct {
-    arena: std.heap.ArenaAllocator,
-    root: Token,
-
-    pub fn init(allocator: Allocator) Bencode {
-        return Bencode{ .arena = std.heap.ArenaAllocator.init(allocator), .root = undefined };
-    }
-
-    pub fn deinit(self: *Bencode) void {
-        self.arena.deinit();
-    }
-
-    pub fn format(self: Bencode, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt; // autofix
-        _ = options; // autofix
-        try writer.print("{}", .{self.root});
-    }
-};
-
-// used to parse token
-const Reader = struct { stream: std.io.FixedBufferStream([]const u8), ally: Allocator };
-
+const Stream = std.io.FixedBufferStream([]const u8);
 pub const Token = union(enum) {
     integer: i64,
     string: []const u8,
@@ -42,7 +19,7 @@ pub const Token = union(enum) {
                 try writer.print("{d}", .{i});
             },
             .string => |s| {
-                try writer.print("{s}", .{s});
+                try writer.print("\"{s}\"", .{s});
             },
             .list => |l| {
                 var sep: []const u8 = " ";
@@ -62,6 +39,13 @@ pub const Token = union(enum) {
                 }
                 try writer.print(" }}", .{});
             },
+        }
+    }
+
+    pub fn deinit(self: *Token, arena: *std.heap.ArenaAllocator) void {
+        switch (self.*) {
+            .integer => {},
+            else => arena.deinit(),
         }
     }
 
@@ -92,173 +76,166 @@ pub const Token = union(enum) {
 
 // i32e
 // i-32e
-fn parseInteger(r: *Reader) !Token {
+fn parseInteger(stream: *Stream) !Token {
     var buff: [1024]u8 = undefined;
-    if (try r.stream.reader().readByte() != 'i') return error.ExpectedIntegerStart; // skip i
-    const num = r.stream.reader().readUntilDelimiter(&buff, 'e') catch return error.BadNumber;
+    if (try stream.reader().readByte() != 'i') return error.ExpectedIntegerStart; // skip i
+    const num = stream.reader().readUntilDelimiter(&buff, 'e') catch return error.BadNumber;
     return Token{ .integer = try std.fmt.parseInt(i64, num, 10) };
 }
 
 // 3:foo
-fn parseString(r: *Reader) !Token {
+fn parseString(ally: std.mem.Allocator, stream: *Stream) !Token {
     var buff: [1024]u8 = undefined;
-    const num = try r.stream.reader().readUntilDelimiter(&buff, ':');
+    const num = try stream.reader().readUntilDelimiter(&buff, ':');
     const len = try std.fmt.parseUnsigned(usize, num, 10);
 
-    const string = try r.ally.alloc(u8, len);
-    errdefer r.ally.free(string);
-    _ = try r.stream.read(string);
+    const string = try ally.alloc(u8, len);
+    errdefer ally.free(string);
+    _ = try stream.read(string);
     return Token{ .string = string };
 }
 
 // li34e3:Fooe
-fn parseList(r: *Reader) !Token {
-    var list = List.init(r.ally);
+fn parseList(ally: std.mem.Allocator, stream: *Stream) !Token {
+    var list = List.init(ally);
     errdefer list.deinit();
 
-    if (try r.stream.reader().readByte() != 'l') return error.ExpectedListStart; // skip l
+    if (try stream.reader().readByte() != 'l') return error.ExpectedListStart; // skip l
 
-    while (try r.stream.reader().readByte() != 'e') {
-        try r.stream.seekTo(r.stream.pos - 1);
-        try list.append(try parseAny(r));
+    while (try stream.reader().readByte() != 'e') {
+        try stream.seekTo(stream.pos - 1);
+        try list.append(try parseAny(ally, stream));
     }
 
     return Token{ .list = list };
 }
 
 // d3:Foo133ee
-fn parseDictionnary(r: *Reader) !Token {
+fn parseDictionnary(ally: std.mem.Allocator, stream: *Stream) !Token {
     var map = Map{};
-    if (try r.stream.reader().readByte() != 'd') return error.ExpectedDictionnaryStart; // skip d
+    if (try stream.reader().readByte() != 'd') return error.ExpectedDictionnaryStart; // skip d
 
-    while (try r.stream.reader().readByte() != 'e') {
-        try r.stream.seekTo(r.stream.pos - 1);
-        const k = try parseString(r);
-        const v = try parseAny(r);
-        try map.put(r.ally, k.string, v);
+    while (try stream.reader().readByte() != 'e') {
+        try stream.seekTo(stream.pos - 1);
+        const k = try parseString(ally, stream);
+        const v = try parseAny(ally, stream);
+        try map.put(ally, k.string, v);
     }
     return Token{ .dictionnary = map };
 }
 
-fn parseAny(r: *Reader) anyerror!Token {
-    const c = try r.stream.reader().readByte();
-    try r.stream.seekTo(r.stream.pos - 1);
+fn parseAny(ally: std.mem.Allocator, stream: *Stream) anyerror!Token {
+    const c = try stream.reader().readByte();
+    try stream.seekTo(stream.pos - 1);
 
     return switch (c) {
-        'i' => try parseInteger(r),
-        '0'...'9' => try parseString(r),
-        'l' => try parseList(r),
-        'd' => try parseDictionnary(r),
+        'i' => try parseInteger(stream),
+        '-', '0'...'9' => try parseString(ally, stream),
+        'l' => try parseList(ally, stream),
+        'd' => try parseDictionnary(ally, stream),
         else => return error.InvalidDelimiter,
     };
 }
 
-pub fn parse(allocator: Allocator, data: []const u8) !Bencode {
-    var bencode = Bencode.init(allocator);
-    errdefer bencode.deinit();
-
-    const stream = std.io.fixedBufferStream(data);
-    var reader = Reader{ .ally = bencode.arena.allocator(), .stream = stream };
-
-    bencode.root = try parseAny(&reader);
-    return bencode;
+// call Token.deinit() to free the data
+pub fn parse(arena: *std.heap.ArenaAllocator, data: []const u8) !Token {
+    var stream: Stream = std.io.fixedBufferStream(data);
+    return try parseAny(arena.allocator(), &stream);
 }
 
 ///// TEST
 
+const testing = std.testing;
+const tally = testing.allocator;
+const fixedBufferStream = std.io.fixedBufferStream;
+
 test parseInteger {
-    const testing = std.testing;
     const data = "i34e";
-    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = testing.allocator };
-    const tk = try parseInteger(&reader);
+    var buffstream = fixedBufferStream(data);
+    const tk = try parseInteger(&buffstream);
     try testing.expect(tk == .integer);
     try testing.expectEqual(tk.integer, 34);
-    std.debug.print("\n", .{});
-    std.debug.print("{}\n", .{tk});
 }
 
 test parseString {
-    const testing = std.testing;
     const data = "3:Foo";
-    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = testing.allocator };
-    const tk = try parseString(&reader);
+    var buffstream = fixedBufferStream(data);
+    const tk = try parseString(tally, &buffstream);
     defer testing.allocator.free(tk.string);
     try testing.expect(tk == .string);
     try testing.expectEqualStrings(tk.string, "Foo");
-    std.debug.print("\n", .{});
-    std.debug.print("{}\n", .{tk});
-}
-
-test "0 length string" {
-    const testing = std.testing;
-    const data = "0:";
-    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = testing.allocator };
-    const tk = try parseString(&reader);
-    defer testing.allocator.free(tk.string);
-    try testing.expect(tk == .string);
-    try testing.expect(tk.string.len == 0);
-    try testing.expectEqualStrings(tk.string, "");
-    std.debug.print("\n", .{});
-    std.debug.print("{}\n", .{tk});
 }
 
 test parseList {
-    const testing = std.testing;
     const data = "li34e3:Fooe";
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = arena.allocator() };
-    const tk = try parseList(&reader);
-    defer arena.deinit();
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var buffstream = fixedBufferStream(data);
+    var tk = try parseList(arena.allocator(), &buffstream);
+    defer tk.deinit(&arena);
     std.debug.print("\n", .{});
     std.debug.print("{}\n", .{tk});
 }
 
 test parseDictionnary {
-    const testing = std.testing;
     const data = "d3:Foo3:Bar3:Bari33ee";
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = arena.allocator() };
-    const tk = try parseDictionnary(&reader);
-    defer arena.deinit();
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var buffstream = fixedBufferStream(data);
+    var tk = try parseDictionnary(arena.allocator(), &buffstream);
+    defer tk.deinit(&arena);
     std.debug.print("\n", .{});
     std.debug.print("{}\n", .{tk});
 }
 
 test parseAny {
-    const testing = std.testing;
     const data = "d3:Foo3:Bar3:Bari33e4:Listli33ei34ei35eee";
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    var reader = Reader{ .stream = std.io.fixedBufferStream(data), .ally = arena.allocator() };
-    const tk = try parseAny(&reader);
-    defer arena.deinit();
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var buffstream = fixedBufferStream(data);
+    var tk = try parseAny(arena.allocator(), &buffstream);
+    defer tk.deinit(&arena);
     std.debug.print("\n", .{});
     std.debug.print("{}\n", .{tk});
 }
 
 test parse {
-    const testing = std.testing;
     const data = "d3:Foo3:Bar3:Bari33e4:Listli33ei34ed5:Hello5:Worldeee";
-    var bencode = try parse(testing.allocator, data);
-    defer bencode.deinit();
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var bencode = try parse(&arena, data);
+    defer bencode.deinit(&arena);
     std.debug.print("\n", .{});
-    std.debug.print("{}\n", .{bencode.root});
+    std.debug.print("{}\n", .{bencode});
 }
 
 test "encode" {
-    const testing = std.testing;
-
     // create data structure
     const data = "d3:Foo3:Bar3:Bari33e4:Listli33ei34ed5:Hello5:Worldeee";
-    var bencode = try parse(testing.allocator, data);
-    defer bencode.deinit();
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var bencode = try parse(&arena, data);
+    defer bencode.deinit(&arena);
     std.debug.print("\n", .{});
-    std.debug.print("{}\n\n", .{bencode.root});
+    std.debug.print("{}\n", .{bencode});
 
     // encode it
     var buff: [1024]u8 = undefined;
     var arr = std.io.fixedBufferStream(&buff);
-    try bencode.root.encode(arr.writer());
-    std.debug.print("{s}\n", .{arr.buffer[0..arr.pos]});
+    try bencode.encode(arr.writer());
+    std.debug.print("{s}\n\n", .{arr.buffer[0..arr.pos]});
 
     try testing.expectEqualStrings(arr.buffer[0..arr.pos], data);
+}
+
+const sizeFmt = std.fmt.fmtIntSizeBin;
+test "torrent file" {
+    const data = try std.fs.cwd().readFileAlloc(tally, "debian.torrent", 1 * 1024 * 1024);
+    defer tally.free(data);
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var bencode = try parse(&arena, data);
+    defer bencode.deinit(&arena);
+
+    const root = bencode.dictionnary;
+    const info = root.get("info").?.dictionnary;
+    std.debug.print("name   : {}\n", .{info.get("name").?});
+    std.debug.print("length : {}\n", .{sizeFmt(@intCast(info.get("length").?.integer))});
+    std.debug.print("tracker: {}\n", .{root.get("announce").?});
+    std.debug.print("creator: {}\n", .{root.get("created by").?});
+    std.debug.print("created: {}\n", .{root.get("creation date").?});
 }

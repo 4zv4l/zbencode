@@ -6,10 +6,7 @@ zig bencode library
 ```zig
 const std = @import("std");
 const bencode = @import("bencode");
-const fs = std.fs;
-const print = std.debug.print;
 const sizeFmt = std.fmt.fmtIntSizeBin;
-const hexFmt = std.fmt.fmtSliceHexLower;
 
 pub fn main() !void {
     // setup + args
@@ -21,22 +18,21 @@ pub fn main() !void {
         return;
     }
 
-    // decoding
-    const data = try fs.cwd().readFileAlloc(allocator, args[1], std.math.maxInt(usize));
-    var bdata = try bencode.parse(allocator, data);
-    defer bdata.deinit();
-    allocator.free(data);
+    // read file + decoding
+    const data = try std.fs.cwd().readFileAlloc(tally, "debian.torrent", 1 * 1024 * 1024);
+    defer tally.free(data);
+    var arena = std.heap.ArenaAllocator.init(tally);
+    var bencode = try parse(&arena, data);
+    defer bencode.deinit(&arena);
 
-    // show info from torrent file
-    const root = bdata.root.dictionnary;
-    const infos = root.get("info").?.dictionnary;
-
-    print("name    : {}\n", .{infos.get("name").?});
-    print("length  : {}\n", .{sizeFmt(@intCast(infos.get("length").?.integer))});
-    print("tracker : {}\n", .{root.get("announce").?});
-    print("creator : {}\n", .{root.get("created by").?});
-    print("created : {}\n", .{root.get("creation date").?});
-}
+    // pretty print
+    const root = bencode.dictionnary;
+    const info = root.get("info").?.dictionnary;
+    std.debug.print("name   : {}\n", .{info.get("name").?});
+    std.debug.print("length : {}\n", .{sizeFmt(@intCast(info.get("length").?.integer))});
+    std.debug.print("tracker: {}\n", .{root.get("announce").?});
+    std.debug.print("creator: {}\n", .{root.get("created by").?});
+    std.debug.print("created: {}\n", .{root.get("creation date").?});
 ```
 
 ```
