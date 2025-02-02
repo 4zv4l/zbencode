@@ -232,10 +232,10 @@ test "torrent file" {
     defer bencode.deinit(&arena);
 
     const root = bencode.dictionnary;
-    const info = root.get("info").?.dictionnary;
-    std.debug.print("name   : {}\n", .{info.get("name").?});
-    std.debug.print("length : {}\n", .{sizeFmt(@intCast(info.get("length").?.integer))});
-    std.debug.print("tracker: {}\n", .{root.get("announce").?});
-    std.debug.print("creator: {}\n", .{root.get("created by").?});
-    std.debug.print("created: {}\n", .{root.get("creation date").?});
+    const info = (root.get("info") orelse return error.NoInfoField).dictionnary;
+    std.debug.print("name   : {}\n", .{info.get("name") orelse return error.NoNameField});
+    std.debug.print("length : {}\n", .{sizeFmt(@intCast((info.get("length") orelse return error.NoLengthField).integer))});
+    std.debug.print("tracker: {}\n", .{root.get("announce") orelse return error.NoAnnounceField});
+    std.debug.print("creator: {}\n", .{root.get("created by") orelse return error.NoCreatedByField});
+    std.debug.print("created: {}\n", .{root.get("creation date") orelse return error.NoCreationDateField});
 }
