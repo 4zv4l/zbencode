@@ -223,6 +223,27 @@ test "encode" {
     try testing.expectEqualStrings(arr.buffer[0..arr.pos], data);
 }
 
+const Torrent = struct {
+    name: []const u8,
+    length: i64,
+    tracker: []const u8,
+    creator: []const u8,
+    created: i64,
+
+    pub fn parseTorrent(b: Token) !Torrent {
+        if (b != .dictionnary) return error.NotADictionnary;
+        const root = b.dictionnary;
+        const info = (root.get("info") orelse return error.NoInfoField).dictionnary;
+        return .{
+            .name = (info.get("name") orelse return error.NoNameField).string,
+            .length = (info.get("length") orelse return error.NoLengthField).integer,
+            .tracker = (root.get("announce") orelse return error.NoAnnounceField).string,
+            .creator = (root.get("created by") orelse return error.NoCreatedByField).string,
+            .created = (root.get("creation date") orelse return error.NoCreationDateField).integer,
+        };
+    }
+};
+
 const sizeFmt = std.fmt.fmtIntSizeBin;
 test "torrent file" {
     const data = try std.fs.cwd().readFileAlloc(tally, "debian.torrent", 1 * 1024 * 1024);
@@ -231,11 +252,10 @@ test "torrent file" {
     var bencode = try parse(&arena, data);
     defer bencode.deinit(&arena);
 
-    const root = bencode.dictionnary;
-    const info = (root.get("info") orelse return error.NoInfoField).dictionnary;
-    std.debug.print("name   : {}\n", .{info.get("name") orelse return error.NoNameField});
-    std.debug.print("length : {}\n", .{sizeFmt(@intCast((info.get("length") orelse return error.NoLengthField).integer))});
-    std.debug.print("tracker: {}\n", .{root.get("announce") orelse return error.NoAnnounceField});
-    std.debug.print("creator: {}\n", .{root.get("created by") orelse return error.NoCreatedByField});
-    std.debug.print("created: {}\n", .{root.get("creation date") orelse return error.NoCreationDateField});
+    const torrent = try Torrent.parseTorrent(bencode);
+    std.debug.print("name   : {s}\n", .{torrent.name});
+    std.debug.print("length : {}\n", .{sizeFmt(@intCast(torrent.length))});
+    std.debug.print("tracker: {s}\n", .{torrent.tracker});
+    std.debug.print("creator: {s}\n", .{torrent.creator});
+    std.debug.print("created: {d}\n", .{torrent.created});
 }
