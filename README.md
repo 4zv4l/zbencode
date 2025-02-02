@@ -36,7 +36,7 @@ pub fn main() !void {
 ```
 
 ```
-$ btest debian-12.6.0-amd64-netinst.iso.torrent
+$ btest debian.torrent
 name   : debian-12.9.0-amd64-netinst.iso
 length : 632MiB
 tracker: http://bttracker.debian.org:6969/announce
